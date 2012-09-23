@@ -2315,6 +2315,18 @@ static void swapGlBuffers_x11(MPGLContext *ctx)
 }
 #endif
 
+#ifdef CONFIG_GL_KMS
+#include "kms_common.h"
+
+static int setGlWindow_kms(MPGLContext *ctx)
+{
+    if (create_context_kms(ctx))
+        return SET_WINDOW_FAILED;
+    getFunctions(ctx->gl, eglGetProcAddress, "", false);
+    return SET_WINDOW_OK;
+}
+#endif
+
 #ifdef CONFIG_GL_SDL
 #include "sdl_common.h"
 
@@ -2380,12 +2392,14 @@ static struct backend backends[] = {
     {"win", GLTYPE_W32},
     {"x11", GLTYPE_X11},
     {"sdl", GLTYPE_SDL},
+    {"kms", GLTYPE_KMS},
     // mplayer-svn aliases (note that mplayer-svn couples these with the numeric
     // values of the internal GLTYPE_* constants)
     {"-1", GLTYPE_AUTO},
     { "0", GLTYPE_W32},
     { "1", GLTYPE_X11},
     { "2", GLTYPE_SDL},
+    { "3", GLTYPE_KMS},
 
     {0}
 };
@@ -2410,6 +2424,9 @@ MPGLContext *init_mpglcontext(enum MPGLType type, struct vo *vo)
         if (ctx)
             return ctx;
         ctx = init_mpglcontext(GLTYPE_X11, vo);
+        if (ctx)
+            return ctx;
+        ctx = init_mpglcontext(GLTYPE_KMS, vo);
         if (ctx)
             return ctx;
         return init_mpglcontext(GLTYPE_SDL, vo);
@@ -2470,6 +2487,23 @@ MPGLContext *init_mpglcontext(enum MPGLType type, struct vo *vo)
         ctx->ontop = vo_x11_ontop;
         ctx->vo_uninit = vo_x11_uninit;
         if (vo_init(vo))
+            return ctx;
+        break;
+#endif
+#ifdef CONFIG_GL_KMS
+    case GLTYPE_KMS:
+        ctx->priv = talloc_zero(ctx, struct kms_context);
+        ctx->create_window = create_window_kms;
+        ctx->setGlWindow = setGlWindow_kms;
+        ctx->releaseGlContext = releaseGlContext_kms;
+        ctx->swapGlBuffers = swapGlBuffers_kms;
+        ctx->border = vo_kms_border;
+        ctx->update_xinerama_info = update_xinerama_info_kms;
+        ctx->check_events = vo_kms_check_events;
+        ctx->fullscreen = vo_kms_fullscreen;
+        ctx->ontop = vo_kms_ontop;
+        ctx->vo_uninit = vo_kms_uninit;
+        if (vo_kms_init(vo))
             return ctx;
         break;
 #endif

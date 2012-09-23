@@ -792,6 +792,8 @@ for ac_option do
   --disable-vdpau)      _vdpau=no       ;;
   --enable-sdl)         _sdl=yes        ;;
   --disable-sdl)        _sdl=no         ;;
+  --disable-kms)        _kms=no         ;;
+  --enable-kms)         _kms=yes        ;;
   --enable-direct3d)    _direct3d=yes   ;;
   --disable-direct3d)   _direct3d=no    ;;
   --enable-directx)     _directx=yes    ;;
@@ -4084,10 +4086,16 @@ echores "$_sdl"
 # conflicts between -lGL and -framework OpenGL
 echocheck "OpenGL"
 #Note: this test is run even with --enable-gl since we autodetect linker flags
-if (test "$_x11" = yes || test "$_sdl" = yes || test "$_cocoa" = yes || win32) && test "$_gl" != no ; then
+if (test "$_x11" = yes || test "$_kms" = yes || test "$_sdl" = yes || test "$_cocoa" = yes || win32) && test "$_gl" != no ; then
   cat > $TMPC << EOF
 #ifdef GL_WIN32
 #include <windows.h>
+#include <GL/gl.h>
+#elif defined(GL_KMS)
+#include <EGL/egl.h>
+#include <gbm.h>
+#include <xf86drm.h>
+#include <xf86drmMode.h>
 #include <GL/gl.h>
 #elif defined(GL_SDL)
 #include <GL/gl.h>
@@ -4109,6 +4117,10 @@ int main(int argc, char *argv[]) {
 #ifdef GL_WIN32
   HDC dc;
   wglCreateContext(dc);
+#elif defined(GL_KMS)
+  eglMakeCurrent(NULL, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+  drmModePageFlip(0, 0, 0, DRM_MODE_PAGE_FLIP_EVENT, NULL);
+  gbm_surface_lock_front_buffer(NULL);
 #elif defined(GL_SDL)
   SDL_GL_SwapBuffers();
 #else
@@ -4151,6 +4163,17 @@ EOF
       libs_mplayer="$libs_mplayer -lGL"
     fi
   fi
+  if test "$_kms" = yes ; then
+    for _ld_tmp in "-lEGL -lgbm -ldrm -lGL" ; do
+      if cc_check -DGL_KMS -I/usr/include/libdrm $_ld_tmp $_ld_lm ; then
+        _gl=yes
+        _gl_kms=yes
+        extra_cflags="$extra_cflags -I/usr/include/libdrm"
+        libs_mplayer="$libs_mplayer $_ld_tmp $_ld_dl"
+        break
+      fi
+    done
+  fi
 else
   _gl=no
 fi
@@ -4169,6 +4192,10 @@ if test "$_gl" = yes ; then
     def_gl_x11='#define CONFIG_GL_X11 1'
     res_comment="$res_comment x11"
   fi
+  if test "$_gl_kms" = yes ; then
+    def_gl_kms='#define CONFIG_GL_KMS 1'  
+    res_comment="$res_comment kms"
+  fi
   if test "$_gl_sdl" = yes ; then
     def_gl_sdl='#define CONFIG_GL_SDL 1'
     res_comment="$res_comment sdl"
@@ -4179,6 +4206,7 @@ else
   def_gl_cocoa='#undef CONFIG_GL_COCOA'
   def_gl_win32='#undef CONFIG_GL_WIN32'
   def_gl_x11='#undef CONFIG_GL_X11'
+  def_gl_kms='#undef CONFIG_GL_KMS'
   def_gl_sdl='#undef CONFIG_GL_SDL'
   novomodules="opengl $novomodules"
 fi
@@ -5649,6 +5677,7 @@ GL = $_gl
 GL_COCOA = $_gl_cocoa
 GL_WIN32 = $_gl_win32
 GL_X11 = $_gl_x11
+GL_KMS = $_gl_kms
 GL_SDL = $_gl_sdl
 HAVE_POSIX_SELECT = $_posix_select
 HAVE_SYS_MMAN_H = $_mman
@@ -5996,6 +6025,7 @@ $def_gl
 $def_gl_cocoa
 $def_gl_win32
 $def_gl_x11
+$def_gl_kms
 $def_gl_sdl
 $def_jpeg
 $def_md5sum
